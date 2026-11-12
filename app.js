@@ -20,8 +20,7 @@ var ICON={
  trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
  star:'<path d="M12 3l2.700 5.600 6.100.9-4.400 4.300 1 6.100L12 17l-5.400 2.900 1-6.100L3.200 9.500l6.100-.9z"/>',
  box:'<path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/>'
-};
-var C = window.APP_CONFIG;
+};var C = window.APP_CONFIG;
 var sb = window.supabase.createClient(C.URL, C.KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
 var ROOT = document.getElementById('app');
 
@@ -239,7 +238,6 @@ async function salir(){
   S.uid = null; S.role = null; S.people = []; S.asist = {}; S.apoyos = {}; S.eventos = {}; S.resumen = null; S.urls = {};
   S.pin = ''; S.err = ''; S.sheet = null; S.screen = 'login'; render();
 }
-
 /* =====================  PANTALLAS  ===================== */
 function avP(p, st){
   var u = p.foto_path && S.urls[p.foto_path];
@@ -251,7 +249,10 @@ function waUrl(tel, texto){
   if (d.length === 9) d = '51' + d;
   return 'https://wa.me/' + d + (texto ? '?text=' + encodeURIComponent(texto) : '');
 }
-function conversosAct(){ return S.people.filter(function(p){ return p.tipo === 'converso' && p.estado === 'activo'; }); }
+/* Regla de los 12 meses: un converso cuenta como tal hasta cumplir un año desde su bautismo */
+function finAnio(p){ var d = pd(p.fecha_bautismo), m = d.getMonth(); d.setFullYear(d.getFullYear() + 1); if (d.getMonth() !== m) d.setDate(0); return d; }
+function esGraduado(p){ return p.tipo === 'converso' && !!p.fecha_bautismo && finAnio(p) <= hoyD(); }
+function conversosAct(){ return S.people.filter(function(p){ return p.tipo === 'converso' && p.estado === 'activo' && !esGraduado(p); }); }
 function amigosDe(estado){ return S.people.filter(function(p){ return p.tipo === 'amigo' && p.estado === estado; }); }
 
 function render(){
@@ -357,6 +358,7 @@ function hoyHtml(){
 function personaFila(p){
   var st = '';
   if (p.estado === 'mudado') st = '<span class="chip">Mudado</span>';
+  else if (esGraduado(p)) st = '<span class="chip">Cumplió su año</span>';
   else if (p.tipo === 'converso') { var v = getAs(p.id, domingo(0)); st = v === 'no' ? '<span class="chip bad">Faltó</span>' : v === 'si' ? '<span class="chip ok">Asistió</span>' : '<span class="chip">Sin registro</span>'; }
   else if (p.tipo === 'amigo') st = p.estado === 'dejo_de_ensenar' ? '<span class="chip warn">Se dejó de enseñar · ' + esc(p.motivo_baja || '') + '</span>' : '<span class="chip blue">' + STAGES[p.etapa || 1] + (p.etapa === 2 && p.fecha_bautismal ? ' · ' + fmtF(p.fecha_bautismal) : '') + '</span>';
   else if (p.tipo === 'referencia') { var urg = !p.contactado_en && (Date.now() - new Date(p.creado_en)) > 864e5; st = p.contactado_en ? '<span class="chip ok">Contactada</span>' : '<span class="chip ' + (urg ? 'warn' : '') + '">' + (urg ? 'Sin contactar +24 h' : 'Nueva') + '</span>'; }
@@ -365,12 +367,19 @@ function personaFila(p){
 }
 function personasListHtml(){
   var f = S.filter, q = S.q.toLowerCase();
-  var list = S.people.filter(function(p){ return (f === 'todos' || p.tipo === f) && (!q || p.nombre.toLowerCase().indexOf(q) > -1); });
-  return list.map(personaFila).join('') || '<p class="sub" style="text-align:center;margin-top:24px">' + (S.people.length ? 'Nadie coincide con esa búsqueda.' : 'Todavía no hay personas. Toca el botón + para agregar la primera.') + '</p>';
+  var list = S.people.filter(function(p){
+    if (q && p.nombre.toLowerCase().indexOf(q) < 0) return false;
+    if (f === 'graduado') return esGraduado(p);
+    if (esGraduado(p)) return !!q && f === 'todos';      // solo aparecen en "Todos" si los buscas por nombre
+    return f === 'todos' || p.tipo === f;
+  });
+  var vacio = f === 'graduado' ? 'Todavía nadie ha cumplido su año.' : (S.people.length ? 'Nadie coincide con esa búsqueda.' : 'Todavía no hay personas. Toca el botón + para agregar la primera.');
+  return list.map(personaFila).join('') || '<p class="sub" style="text-align:center;margin-top:24px">' + vacio + '</p>';
 }
 function personasHtml(){
   var f = S.filter;
-  var seg = [['todos','Todos'],['converso','Conversos'],['amigo','Amigos'],['referencia','Referencias'],['regresando','Regresando']].map(function(s){ return '<button data-a="filtro" data-v="' + s[0] + '" class="' + (f === s[0] ? 'on' : '') + '">' + s[1] + '</button>'; }).join('');
+  var nGrad = S.people.filter(esGraduado).length;
+  var seg = [['todos','Todos'],['converso','Conversos'],['amigo','Amigos'],['referencia','Referencias'],['regresando','Regresando']].concat(nGrad ? [['graduado','Cumplieron su año (' + nGrad + ')']] : []).map(function(s){ return '<button data-a="filtro" data-v="' + s[0] + '" class="' + (f === s[0] ? 'on' : '') + '">' + s[1] + '</button>'; }).join('');
   return '<div class="search">' + ic('search') + '<input id="q" placeholder="Buscar por nombre" value="' + esc(S.q) + '" aria-label="Buscar"></div><div class="seg">' + seg + '</div><div class="list" id="plist" style="margin-top:6px">' + personasListHtml() + '</div>';
 }
 
@@ -386,6 +395,11 @@ function fichaHtml(){
   h += '<div class="screen" id="scr" style="padding-top:0">';
   h += '<div style="text-align:center"><label style="display:block;width:72px;margin:0 auto;position:relative;cursor:pointer" title="Cambiar foto">' + avP(p, 'width:72px;height:72px;font-size:24px;margin:0 auto') + '<span style="position:absolute;right:-4px;bottom:-4px;width:26px;height:26px;border-radius:50%;background:var(--gold);color:var(--navy);display:flex;align-items:center;justify-content:center">' + ic('plus') + '</span><input type="file" id="ffo" accept="image/*" style="position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer" aria-label="Agregar o cambiar foto"></label>' +
     '<div style="font-family:var(--font-display);font-weight:600;font-size:21px;color:var(--navy);margin-top:8px">' + esc(p.nombre) + '</div><div style="margin-top:4px"><span class="chip blue">' + KIND[p.tipo] + '</span> ' + (p.tipo === 'converso' && p.organizacion ? '<span class="chip">' + esc(p.organizacion) + '</span>' : '') + (p.estado === 'mudado' ? ' <span class="chip">Mudado</span>' : '') + '</div></div>';
+  if (p.tipo === 'converso' && p.fecha_bautismo) {
+    var fa = finAnio(p), dr = Math.round((fa - hoyD()) / 864e5), fas = fmtC(fa) + ' ' + fa.getFullYear();
+    if (dr <= 0) h += '<div class="card" style="background:#EEF4FA;border-color:#CFDAE6"><div class="sub" style="color:var(--ink)"><b>Cumplió su año el ' + fas + '.</b> Ya no cuenta en los números de conversos de la estaca. Su ficha queda guardada.</div></div>';
+    else if (dr <= 28) h += '<div class="card" style="background:#FFF8E5;border-color:#F2DDA6"><div class="sub" style="color:#6B4A0A"><b>Cumple su año el ' + fas + ' (' + (dr === 1 ? 'mañana' : 'en ' + dr + ' días') + ').</b> Es buen momento para el último seguimiento y para presentarlo a su organización.</div></div>';
+  }
   var conAvisar = p.tipo === 'converso';
   h += '<div class="quick" style="grid-template-columns:repeat(' + (conAvisar ? 4 : 3) + ',1fr)"><button data-a="call">' + ic('phone') + 'Llamar</button><button data-a="wa" data-id="' + p.id + '" style="color:var(--green)">' + ic('chat') + 'WhatsApp</button><button data-a="map">' + ic('pin') + 'Mapa</button>' + (conAvisar ? '<button data-a="avisar">' + ic('bell') + 'Avisar</button>' : '') + '</div>';
 
@@ -520,7 +534,7 @@ function estacaHtml(){
   var W = R.map(function(r){
     return { n:r.barrio, meta:r.meta || 30, bap:r.bautizados_anio || 0, bz:r.bautizados_90d || 0, mes:r.bautizados_por_mes || [], ens:r.ensenandose || 0, fecha:r.con_fecha || 0, ref:r.referencias || 0,
       wk:r.pronostico || [0,0,0,0], dej:r.dejaron_mes || 0, dej90:r.dejaron_90d || 0, dej6:r.dejaron_6m || [], ret:r.retomados_mes || 0, faltas:r.faltas_2_seguidas || 0, sinc:r.sin_contactar_24h || 0,
-      asist:r.asistencia_4s, a4:r.asistencia_serie || [], r6:r.activos_6m, r12:r.activos_12m,
+      asist:r.asistencia_4s, a4:r.asistencia_serie || [], r6:r.activos_6m, cv:r.conversos_vigentes,
       hace: r.ultima_actualizacion ? Math.max(0, Math.floor((Date.now() - new Date(r.ultima_actualizacion)) / 864e5)) : null };
   });
   if (!W.length) return '<div class="card"><div class="sub">Aún no hay datos para mostrar.</div></div>';
@@ -564,7 +578,7 @@ function estacaHtml(){
     '<table class="tl"><tr><th>Barrio</th><th>Dejaron este mes</th></tr>' + W.map(function(w){ return '<tr><td>' + esc(w.n) + '</td><td><b>' + mk(w.dej) + '</b></td></tr>'; }).join('') + '</table></div>';
   var Mm = []; for (var m = 0; m <= hoy.getMonth(); m++) Mm.push(W.reduce(function(a, w){ return a + (w.mes[m] || 0); }, 0));
   h += '<div class="h2">Tendencia</div><div class="card"><b style="font-weight:500">Bautismos por mes</b><div class="sub">Mes en curso con color más claro.</div>' + chartBars(Mm) + '<div style="height:14px"></div><b style="font-weight:500">Acumulado contra el ritmo</b><div class="sub">Línea dorada: lo que llevan. Punteada: ritmo para llegar a ' + metaT + '.</div>' + chartCum(Mm, metaT) + '</div>';
-  h += '<div class="h2">Retención</div><div class="card"><div class="sub">Asistencia de conversos las últimas 4 semanas y cuántos siguen activos.</div><table class="tl"><tr><th>Barrio</th><th>4 semanas</th><th>Activos 6 m</th><th>Activos 12 m</th></tr>' + W.map(function(w){ return '<tr><td>' + esc(w.n) + '</td><td><div class="mb">' + [0,1,2,3].map(function(i){ var v = w.a4[i]; return '<i style="height:' + (v == null ? 2 : Math.round(v / 100 * 26)) + 'px"></i>'; }).join('') + '</div><span class="sub">' + (w.asist == null ? '—' : w.asist + '%') + '</span></td><td><b>' + (w.r6 == null ? '—' : w.r6 + '%') + '</b></td><td><b>' + (w.r12 == null ? '—' : w.r12 + '%') + '</b></td></tr>'; }).join('') + '</table></div>';
+  h += '<div class="h2">Retención</div><div class="card"><div class="sub">Asistencia de conversos en su primer año (las últimas 4 semanas) y cuántos siguen activos. Al cumplir 12 meses dejan de contarse aquí.</div><table class="tl"><tr><th>Barrio</th><th>4 semanas</th><th>Activos 6 m</th><th>Conversos hoy</th></tr>' + W.map(function(w){ return '<tr><td>' + esc(w.n) + '</td><td><div class="mb">' + [0,1,2,3].map(function(i){ var v = w.a4[i]; return '<i style="height:' + (v == null ? 2 : Math.round(v / 100 * 26)) + 'px"></i>'; }).join('') + '</div><span class="sub">' + (w.asist == null ? '—' : w.asist + '%') + '</span></td><td><b>' + (w.r6 == null ? '—' : w.r6 + '%') + '</b></td><td><b>' + (w.cv == null ? '—' : mk(w.cv)) + '</b></td></tr>'; }).join('') + '</table></div>';
   h += '<div class="card" style="background:#FFF8E5;border-color:#F2DDA6"><div class="sub" style="color:#6B4A0A">Presidencia ve solo cifras. Los nombres, teléfonos y direcciones quedan en cada barrio. Se actualiza cada vez que un barrio guarda un cambio.</div></div>';
   return h;
 }
@@ -623,7 +637,6 @@ function sugerirOrg(){
   if (r.falta) { sg.textContent = 'Elige Hombre o Mujer para sugerir su organización.'; return; }
   $('ao').value = r.o; sg.textContent = 'Sugerida por su edad (' + r.edad + ' años): ' + r.o + '. Puedes cambiarla.';
 }
-
 /* =====================  ACCIONES  ===================== */
 async function run(fn){
   if (S.busy) return;

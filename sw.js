@@ -1,6 +1,6 @@
 // Guarda en el celular solo los archivos de la app (no los datos), para que abra rápido.
 // Los datos siempre se piden a internet. Al publicar una versión nueva, cambia VERSION.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = 'obra-misional-' + VERSION;
 const ARCHIVOS = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
