@@ -1,0 +1,14 @@
+name: Mantener activo Supabase
+on:
+  schedule:
+    - cron: '17 13 * * 1'
+  workflow_dispatch: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tocar la base de datos
+        run: |
+          curl -fsS -X POST "https://djwewviqcwuxzsmccoai.supabase.co/rest/v1/rpc/ping" \
+            -H "apikey: sb_publishable_e44Q1kBTToFqRhr81Z7zYw_KefsMHcJ" \
+            -H "Content-Type: application/json" -d '{}'
